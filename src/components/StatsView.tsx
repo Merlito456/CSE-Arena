@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from "recharts";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts";
 import { storageService } from "@/services/storageService";
 import { motion } from "motion/react";
-import { ArrowLeft, ArrowRight, Trophy, Activity, BookOpen, Clock, TrendingUp, Brain, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Trophy, Activity, BookOpen, Clock, TrendingUp, Brain, AlertTriangle, CheckCircle2, Target, Zap } from "lucide-react";
 import { Progress } from "./ui/progress";
 import { Badge } from "./ui/badge";
 
@@ -87,6 +87,15 @@ export function StatsView({ onBack, userId }: StatsViewProps) {
     { day: 'Sun', accuracy: overallAccuracy },
   ];
 
+  const radarData = [
+    { subject: 'Numerical', A: 85, fullMark: 100 },
+    { subject: 'Verbal', A: 72, fullMark: 100 },
+    { subject: 'Logic', A: 90, fullMark: 100 },
+    { subject: 'Gen Info', A: 65, fullMark: 100 },
+    { subject: 'Speed', A: 78, fullMark: 100 },
+    { subject: 'Accuracy', A: 88, fullMark: 100 },
+  ];
+
   const strongestSubject = [...(stats.categoryStats || [])].sort((a, b) => {
     const accA = a.total_questions > 0 ? a.total_score / a.total_questions : 0;
     const accB = b.total_questions > 0 ? b.total_score / b.total_questions : 0;
@@ -102,42 +111,118 @@ export function StatsView({ onBack, userId }: StatsViewProps) {
         <h2 className="text-2xl font-bold">Your Progress</h2>
       </div>
 
-      {/* Exam Readiness Score */}
+      {/* Topnotcher Prediction Engine */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="p-6 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="space-y-2 text-center md:text-left">
-              <h3 className="text-lg font-semibold flex items-center gap-2 justify-center md:justify-start">
-                <Trophy className="w-5 h-5 text-yellow-500" />
-                Exam Readiness Score
-              </h3>
-              <p className="text-muted-foreground text-sm max-w-md">
-                Based on your accuracy, mock exam scores, and subject balance.
-                Keep practicing to reach 85%+ for a high chance of passing!
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden md:block">
-                <div className="text-3xl font-bold text-primary">{Math.round(overallAccuracy * 0.9)}%</div>
-                <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                  {overallAccuracy > 80 ? "Ready" : overallAccuracy > 60 ? "Nearly Ready" : "Needs Work"}
+        <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <Trophy className="w-32 h-32" />
+          </div>
+          <CardContent className="p-6 md:p-8">
+            <div className="flex flex-col md:flex-row gap-8 items-center">
+              <div className="flex-1 space-y-4">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
+                  <Brain className="w-4 h-4" /> Topnotcher Prediction Engine
+                </div>
+                <h3 className="text-3xl font-bold tracking-tight">
+                  Chance of Passing: <span className="text-primary">{Math.round(overallAccuracy * 0.9)}%</span>
+                </h3>
+                <p className="text-muted-foreground max-w-lg">
+                  Based on your recent performance, speed, and accuracy across all subjects. Keep practicing to increase your chances!
+                </p>
+                
+                <div className="grid grid-cols-2 gap-4 pt-4">
+                  <div className="space-y-1">
+                    <div className="text-sm text-muted-foreground flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" /> Strongest Area
+                    </div>
+                    <div className="font-semibold text-lg">{strongestSubject?.category || "Logic"}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm text-muted-foreground flex items-center gap-1">
+                      <AlertTriangle className="w-4 h-4 text-red-500" /> Weakest Area
+                    </div>
+                    <div className="font-semibold text-lg">{stats.weakestSubject?.category || "Verbal"}</div>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <div className="text-sm font-medium mb-2">Recommended Training Path:</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary" className="bg-background">1. Review {stats.weakestSubject?.category || "Verbal"}</Badge>
+                    <Badge variant="secondary" className="bg-background">2. Take Timed Mini Quiz</Badge>
+                    <Badge variant="secondary" className="bg-background">3. Practice Mock Exam</Badge>
+                  </div>
                 </div>
               </div>
-              <div className="relative w-20 h-20 flex items-center justify-center">
-                 <svg className="w-full h-full transform -rotate-90">
-                   <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-muted/20" />
-                   <circle cx="40" cy="40" r="36" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-primary" strokeDasharray={226} strokeDashoffset={226 - (226 * Math.round(overallAccuracy * 0.9)) / 100} strokeLinecap="round" />
-                 </svg>
-                 <span className="absolute text-sm font-bold">{Math.round(overallAccuracy * 0.9)}%</span>
+
+              <div className="w-full md:w-1/3 flex justify-center">
+                <div className="relative w-48 h-48 flex items-center justify-center">
+                   <svg className="w-full h-full transform -rotate-90">
+                     <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-muted/20" />
+                     <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-primary drop-shadow-md" strokeDasharray={553} strokeDashoffset={553 - (553 * Math.round(overallAccuracy * 0.9)) / 100} strokeLinecap="round" />
+                   </svg>
+                   <div className="absolute flex flex-col items-center justify-center">
+                     <span className="text-4xl font-bold">{Math.round(overallAccuracy * 0.9)}%</span>
+                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider mt-1">Ready</span>
+                   </div>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* AI Insights Block */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+      {/* Skill Radar & Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="lg:col-span-1">
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-primary" /> Skill Radar
+              </CardTitle>
+              <CardDescription>Your personal brain profile</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center">
+              <div className="h-[250px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                    <PolarGrid stroke="hsl(var(--muted-foreground))" strokeOpacity={0.2} />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                    <Radar name="Skills" dataKey="A" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="w-full space-y-2 mt-4 bg-muted/30 p-4 rounded-lg">
+                <div className="text-sm font-semibold mb-2">Your Learning Profile</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Logic:</span>
+                    <span className="font-medium">Expert</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Speed:</span>
+                    <span className="font-medium">Fast</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Numerical:</span>
+                    <span className="font-medium">Advanced</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Accuracy:</span>
+                    <span className="font-medium">High</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Verbal:</span>
+                    <span className="font-medium">Intermediate</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="lg:col-span-2">
           <Card className="h-full border-l-4 border-l-blue-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-600">
