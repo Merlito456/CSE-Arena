@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Trophy, Flame, Target, BookOpen, Zap, Lock, Star, Medal, Crown, Award } from "lucide-react";
+import { Trophy, Flame, Target, BookOpen, Zap, Lock, Star, Medal, Crown, Award, Brain, Clock, Eye, Shield } from "lucide-react";
 import { motion } from "motion/react";
 
 interface AchievementsViewProps {
@@ -15,22 +15,23 @@ interface Achievement {
   title: string;
   description: string;
   icon: any;
-  category: "progress" | "streak" | "performance" | "mastery" | "challenge";
+  category: "progress" | "streak" | "speed" | "accuracy" | "mastery" | "elite" | "style" | "secret";
   progress: number;
   maxProgress: number;
   completed: boolean;
   reward: string;
   color: string;
   bgColor: string;
+  level?: number;
 }
 
 export function AchievementsView({ onBack }: AchievementsViewProps) {
-  // Mock Data
+  // Mock Data for 100+ Badge System Structure
   const achievements: Achievement[] = [
-    // Progress
+    // 1. Progress Track
     {
-      id: "first-quiz",
-      title: "First Steps",
+      id: "first-spark",
+      title: "First Spark",
       description: "Complete your first quiz",
       icon: Star,
       category: "progress",
@@ -42,35 +43,35 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
       bgColor: "bg-yellow-100"
     },
     {
-      id: "quiz-10",
-      title: "Dedicated Learner",
-      description: "Complete 10 quizzes",
+      id: "explorer",
+      title: "Explorer",
+      description: "Complete 5 quizzes",
       icon: BookOpen,
       category: "progress",
-      progress: 3,
-      maxProgress: 10,
-      completed: false,
+      progress: 5,
+      maxProgress: 5,
+      completed: true,
       reward: "+200 XP",
       color: "text-blue-500",
       bgColor: "bg-blue-100"
     },
     {
-      id: "questions-100",
-      title: "Century Club",
-      description: "Answer 100 questions",
+      id: "dedicated-learner",
+      title: "Dedicated Learner",
+      description: "Complete 25 quizzes",
       icon: Target,
       category: "progress",
-      progress: 45,
-      maxProgress: 100,
+      progress: 12,
+      maxProgress: 25,
       completed: false,
       reward: "+500 XP",
       color: "text-purple-500",
       bgColor: "bg-purple-100"
     },
     
-    // Streak
+    // 2. Streak Track
     {
-      id: "streak-3",
+      id: "heating-up",
       title: "Heating Up",
       description: "Reach a 3-day streak",
       icon: Flame,
@@ -83,7 +84,7 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
       bgColor: "bg-orange-100"
     },
     {
-      id: "streak-7",
+      id: "on-fire",
       title: "On Fire",
       description: "Reach a 7-day streak",
       icon: Flame,
@@ -96,26 +97,54 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
       bgColor: "bg-red-100"
     },
 
-    // Performance
+    // 3. Speed Track
     {
-      id: "acc-80",
+      id: "quick-thinker",
+      title: "Quick Thinker",
+      description: "Answer 5 questions under 10 seconds",
+      icon: Zap,
+      category: "speed",
+      progress: 2,
+      maxProgress: 5,
+      completed: false,
+      reward: "+150 XP",
+      color: "text-yellow-500",
+      bgColor: "bg-yellow-100"
+    },
+    {
+      id: "speed-runner",
+      title: "Speed Runner",
+      description: "Finish mini quiz under 2 minutes",
+      icon: Clock,
+      category: "speed",
+      progress: 1,
+      maxProgress: 1,
+      completed: true,
+      reward: "+200 XP",
+      color: "text-blue-500",
+      bgColor: "bg-blue-100"
+    },
+
+    // 4. Accuracy Track
+    {
+      id: "sharp-shooter",
       title: "Sharp Shooter",
       description: "Achieve 80% accuracy in a quiz",
       icon: Target,
-      category: "performance",
-      progress: 75,
-      maxProgress: 80,
-      completed: false,
+      category: "accuracy",
+      progress: 1,
+      maxProgress: 1,
+      completed: true,
       reward: "+150 XP",
       color: "text-green-500",
       bgColor: "bg-green-100"
     },
     {
-      id: "perfect-score",
+      id: "perfectionist",
       title: "Perfectionist",
       description: "Get a perfect score in any quiz",
       icon: Crown,
-      category: "performance",
+      category: "accuracy",
       progress: 0,
       maxProgress: 1,
       completed: false,
@@ -124,34 +153,106 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
       bgColor: "bg-yellow-100"
     },
 
-    // Mastery
+    // 5. Subject Mastery Track
     {
-      id: "math-master",
+      id: "number-ninja-1",
       title: "Number Ninja",
-      description: "Master Numerical Reasoning",
+      description: "Answer 50 numerical questions",
+      icon: Calculator,
+      category: "mastery",
+      progress: 50,
+      maxProgress: 50,
+      completed: true,
+      reward: "Badge + 1000 XP",
+      color: "text-blue-600",
+      bgColor: "bg-blue-100",
+      level: 1
+    },
+    {
+      id: "number-ninja-2",
+      title: "Number Ninja",
+      description: "Answer 200 numerical questions",
       icon: Calculator,
       category: "mastery",
       progress: 65,
-      maxProgress: 100,
+      maxProgress: 200,
+      completed: false,
+      reward: "Badge + 2000 XP",
+      color: "text-blue-600",
+      bgColor: "bg-blue-100",
+      level: 2
+    },
+    {
+      id: "logic-architect",
+      title: "Logic Architect",
+      description: "Master Logic & Reasoning",
+      icon: Brain,
+      category: "mastery",
+      progress: 12,
+      maxProgress: 50,
       completed: false,
       reward: "Badge + 1000 XP",
-      color: "text-blue-600",
-      bgColor: "bg-blue-100"
+      color: "text-purple-600",
+      bgColor: "bg-purple-100",
+      level: 1
     },
 
-    // Challenge
+    // 6. Elite Challenges
     {
-      id: "speedster",
-      title: "Speed Demon",
-      description: "Finish a mini quiz in under 2 mins",
-      icon: Zap,
-      category: "challenge",
+      id: "topnotcher-candidate",
+      title: "Topnotcher Candidate",
+      description: "Score 85% in simulation",
+      icon: Trophy,
+      category: "elite",
       progress: 0,
       maxProgress: 1,
       completed: false,
-      reward: "+200 XP",
+      reward: "Exclusive Title",
       color: "text-yellow-500",
       bgColor: "bg-yellow-100"
+    },
+
+    // 7. Learning Style
+    {
+      id: "fast-thinker",
+      title: "Fast Thinker",
+      description: "Consistently low reaction time",
+      icon: Zap,
+      category: "style",
+      progress: 1,
+      maxProgress: 1,
+      completed: true,
+      reward: "Profile Tag",
+      color: "text-orange-500",
+      bgColor: "bg-orange-100"
+    },
+    {
+      id: "careful-analyst",
+      title: "Careful Analyst",
+      description: "High accuracy but slower speed",
+      icon: Eye,
+      category: "style",
+      progress: 0,
+      maxProgress: 1,
+      completed: false,
+      reward: "Profile Tag",
+      color: "text-indigo-500",
+      bgColor: "bg-indigo-100"
+    },
+
+    // 8. Secret Badges
+    {
+      id: "night-owl",
+      title: "Night Owl",
+      description: "Take a quiz after midnight",
+      icon: Star,
+      category: "secret",
+      progress: 1,
+      maxProgress: 1,
+      completed: true,
+      reward: "Secret Title",
+      color: "text-slate-700",
+      bgColor: "bg-slate-200"
     }
   ];
 
@@ -159,8 +260,12 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
     { id: "all", label: "All", icon: Trophy },
     { id: "progress", label: "Progress", icon: Star },
     { id: "streak", label: "Streak", icon: Flame },
-    { id: "performance", label: "Performance", icon: Target },
+    { id: "speed", label: "Speed", icon: Zap },
+    { id: "accuracy", label: "Accuracy", icon: Target },
     { id: "mastery", label: "Mastery", icon: Crown },
+    { id: "elite", label: "Elite", icon: Shield },
+    { id: "style", label: "Style", icon: Brain },
+    { id: "secret", label: "Secret", icon: Lock },
   ];
 
   const completedCount = achievements.filter(a => a.completed).length;
@@ -242,7 +347,7 @@ export function AchievementsView({ onBack }: AchievementsViewProps) {
                           <div className="flex justify-between items-start">
                             <div>
                               <h4 className={`font-bold ${achievement.completed ? "" : "text-muted-foreground"}`}>
-                                {achievement.title}
+                                {achievement.title} {achievement.level && <span className="text-xs font-normal ml-1 opacity-70">Lvl {achievement.level}</span>}
                               </h4>
                               <p className="text-xs text-muted-foreground">{achievement.description}</p>
                             </div>
