@@ -49,8 +49,8 @@ export const ContentCMS = () => {
   ];
 
   const filteredQuestions = questions.filter(q => 
-    q.question_text.toLowerCase().includes(cmsSearchQuery.toLowerCase()) ||
-    q.category.toLowerCase().includes(cmsSearchQuery.toLowerCase())
+    (q.question_text?.toLowerCase() || "").includes(cmsSearchQuery.toLowerCase()) ||
+    (q.category?.toLowerCase() || "").includes(cmsSearchQuery.toLowerCase())
   );
 
   return (
@@ -93,7 +93,7 @@ export const ContentCMS = () => {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Categories</p>
-                  <p className="text-sm font-bold text-slate-900">{new Set(questions.map(q => q.category)).size}</p>
+                  <p className="text-sm font-bold text-slate-900">{new Set(questions.map(q => q.category || "Uncategorized")).size}</p>
                 </div>
               </CardContent>
             </Card>
@@ -161,7 +161,7 @@ export const ContentCMS = () => {
                       </td>
                       <td className="p-4">
                         <div className="text-xs">
-                          <p className="font-medium text-slate-700">{q.category}</p>
+                          <p className="font-medium text-slate-700">{q.category || "Uncategorized"}</p>
                         </div>
                       </td>
                       <td className="p-4">
@@ -251,7 +251,7 @@ const FlashcardCMS = () => {
         <Card key={deck.id}>
           <CardHeader>
             <CardTitle className="text-lg">{deck.title}</CardTitle>
-            <CardDescription>{deck.category}</CardDescription>
+            <CardDescription>{deck.category || "General"}</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-slate-500 mb-4">{deck.description}</p>

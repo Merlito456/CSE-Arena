@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from "recharts";
+import { storageService } from "@/services/storageService";
 import { motion } from "motion/react";
 import { ArrowLeft, ArrowRight, Trophy, Activity, BookOpen, Clock, TrendingUp, Brain, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Progress } from "./ui/progress";
@@ -35,17 +36,15 @@ export function StatsView({ onBack, userId }: StatsViewProps) {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/stats?userId=${userId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch stats:", err);
-        setLoading(false);
-      });
-  }, []);
+    try {
+      const data = storageService.getStats(userId);
+      setStats(data);
+      setLoading(false);
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
+      setLoading(false);
+    }
+  }, [userId]);
 
   if (loading) {
     return (
@@ -66,7 +65,7 @@ export function StatsView({ onBack, userId }: StatsViewProps) {
 
   const categoryStats = stats.categoryStats || [];
   const chartData = categoryStats.map(stat => ({
-    name: stat.category,
+    name: stat?.category || "Unknown",
     score: Math.round((stat.total_score / stat.total_questions) * 100) || 0,
     attempts: stat.quizzes_taken
   }));
@@ -88,7 +87,7 @@ export function StatsView({ onBack, userId }: StatsViewProps) {
     { day: 'Sun', accuracy: overallAccuracy },
   ];
 
-  const strongestSubject = [...stats.categoryStats].sort((a, b) => {
+  const strongestSubject = [...(stats.categoryStats || [])].sort((a, b) => {
     const accA = a.total_questions > 0 ? a.total_score / a.total_questions : 0;
     const accB = b.total_questions > 0 ? b.total_score / b.total_questions : 0;
     return accB - accA;

@@ -1,11 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
-import { Activity, BookOpen, Trophy, ArrowRight, Flame, Target, Brain, AlertCircle } from "lucide-react";
+import { Activity, BookOpen, Trophy, ArrowRight, Flame, Target, Brain, AlertCircle, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
+import { useEffect, useState } from "react";
+import { aiService } from "@/services/aiService";
 
 interface DashboardProps {
   onNavigate: (view: any) => void;
+  userId: string | null;
   stats: {
     totalQuizzes: number;
     questionsAnswered: number;
@@ -16,10 +19,22 @@ interface DashboardProps {
   } | null;
 }
 
-export function Dashboard({ onNavigate, stats }: DashboardProps) {
+export function Dashboard({ onNavigate, userId, stats }: DashboardProps) {
   const dailyGoal = 20;
   const dailyProgress = stats?.dailyQuestions || 0;
   const progressPercent = Math.min((dailyProgress / dailyGoal) * 100, 100);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [loadingInsight, setLoadingInsight] = useState(false);
+
+  useEffect(() => {
+    if (userId && stats && stats.totalQuizzes > 0) {
+      setLoadingInsight(true);
+      aiService.getPerformanceInsights(userId).then(insight => {
+        setAiInsight(insight);
+        setLoadingInsight(false);
+      });
+    }
+  }, [userId, stats?.totalQuizzes]);
 
   return (
     <div className="space-y-8">
@@ -70,31 +85,60 @@ export function Dashboard({ onNavigate, stats }: DashboardProps) {
         </Card>
       </div>
 
-      {/* AI Recommendation */}
-      {stats?.weakestSubject && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="border-l-4 border-l-yellow-500">
+      {/* AI Recommendation & Insights */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {stats?.weakestSubject && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="border-l-4 border-l-primary h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-primary">
+                  <Brain className="w-5 h-5" />
+                  AI Practice Recommendation
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-4 text-sm">
+                  We noticed you might need more practice in <span className="font-bold">{stats.weakestSubject?.category || "General Practice"}</span>.
+                  Your accuracy is currently {Math.round((stats.weakestSubject?.accuracy || 0) * 100)}%.
+                </p>
+                <Button 
+                  onClick={() => onNavigate('practice')} 
+                  className="bg-primary hover:bg-primary/90 text-white w-full"
+                >
+                  Enter Practice Mode <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card className="border-l-4 border-l-purple-500 h-full">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-yellow-600">
-                <Brain className="w-5 h-5" />
-                AI Smart Review
+              <CardTitle className="flex items-center gap-2 text-purple-600">
+                <Sparkles className="w-5 h-5" />
+                Localized AI Mentor
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="mb-4">
-                We noticed you might need more practice in <span className="font-bold">{stats.weakestSubject.category}</span>.
-                Your accuracy is currently {Math.round(stats.weakestSubject.accuracy * 100)}%.
-              </p>
-              <Button 
-                onClick={() => onNavigate('subjects')} 
-                className="bg-yellow-600 hover:bg-yellow-700 text-white"
-              >
-                Start Smart Review <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
+              {loadingInsight ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+                  <Brain className="w-4 h-4 animate-bounce" />
+                  Analyzing your performance patterns...
+                </div>
+              ) : aiInsight ? (
+                <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                  {aiInsight}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Complete more quizzes to unlock personalized AI insights and pattern analysis.
+                </p>
+              )}
             </CardContent>
           </Card>
         </motion.div>
-      )}
+      </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -133,19 +177,19 @@ export function Dashboard({ onNavigate, stats }: DashboardProps) {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-          <Card className="h-full cursor-pointer border-primary/20 hover:border-primary/50 transition-colors" onClick={() => onNavigate('subjects')}>
+          <Card className="h-full cursor-pointer border-primary/20 hover:border-primary/50 transition-colors" onClick={() => onNavigate('practice')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-primary" />
-                Practice by Subject
+                Practice Mode
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground mb-4 text-sm">
-                Focus on specific areas like Numerical Reasoning, Verbal Ability, or General Information.
+                Access specialized training modules including Recognition Engine, Topnotcher Mode, and more.
               </p>
               <Button className="w-full" variant="secondary">
-                Start Practice <ArrowRight className="w-4 h-4 ml-2" />
+                Enter Hub <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </CardContent>
           </Card>
@@ -165,25 +209,6 @@ export function Dashboard({ onNavigate, stats }: DashboardProps) {
               </p>
               <Button className="w-full">
                 Start Mock Exam <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-          <Card className="h-full cursor-pointer border-destructive/20 hover:border-destructive/50 transition-colors" onClick={() => onNavigate('mistakes')}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-destructive" />
-                Review Mistakes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground mb-4 text-sm">
-                Go over your incorrect answers to understand the concepts better.
-              </p>
-              <Button className="w-full" variant="outline">
-                Review Now <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </CardContent>
           </Card>

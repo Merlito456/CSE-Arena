@@ -8,8 +8,8 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export type ViewState = 
-  | "dashboard" | "subjects" | "mock-exam" | "smart-review" | "question-bank"
-  | "stats" | "history" | "mistakes" | "retry-mistakes"
+  | "dashboard" | "subjects" | "mock-exam" | "practice"
+  | "stats" | "history"
   | "mini-quizzes" | "flashcards" | "planner" | "leaderboard" | "achievements"
   | "premium" | "settings";
 
@@ -29,8 +29,7 @@ export function Sidebar({ currentView, onNavigate, isOpen, setIsOpen, onLogout }
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
         { id: "subjects", label: "Subjects", icon: BookOpen },
         { id: "mock-exam", label: "Mock Exam", icon: GraduationCap },
-        { id: "smart-review", label: "Smart Review", icon: Brain, badge: "AI" },
-        { id: "question-bank", label: "Question Bank", icon: Database },
+        { id: "practice", label: "Practice Mode", icon: Brain, badge: "NEW" },
       ]
     },
     {
@@ -38,8 +37,6 @@ export function Sidebar({ currentView, onNavigate, isOpen, setIsOpen, onLogout }
       items: [
         { id: "stats", label: "Analytics", icon: BarChart2 },
         { id: "history", label: "Exam History", icon: History },
-        { id: "mistakes", label: "Review Mistakes", icon: AlertCircle },
-        // { id: "retry-mistakes", label: "Retry Mistakes", icon: RefreshCw }, // Merged into Review Mistakes usually, but added as requested
       ]
     },
     {
@@ -141,7 +138,7 @@ export function Sidebar({ currentView, onNavigate, isOpen, setIsOpen, onLogout }
           )}
           <div className="bg-muted/50 p-4 rounded-lg text-xs text-muted-foreground">
             <p className="font-semibold mb-1">CSE Arena</p>
-            <p>v1.1.0 • Powered by Gemini</p>
+            <p>v1.1.0 • Powered by AI</p>
           </div>
         </div>
       </motion.div>

@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { BookOpenCheck, ArrowRight, AlertCircle, Shield, UserPlus, LogIn, Check, Clock, X } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { motion, AnimatePresence } from "motion/react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
@@ -89,6 +90,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
     }
 
     try {
+      // Database login check
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,8 +102,8 @@ export function LoginView({ onLogin }: LoginViewProps) {
         saveRecentAccount(user);
         onLogin(user);
       } else {
-        const data = await res.json();
-        setError(data.error || "Login failed. Check your ID.");
+        const errorData = await res.json();
+        setError(errorData.error || "Login failed. Check your ID.");
       }
     } catch (err) {
       console.error("Login error:", err);
@@ -113,6 +115,11 @@ export function LoginView({ onLogin }: LoginViewProps) {
     setId(accountId);
     setError("");
     
+    if (accountId === "GUEST") {
+      onLogin({ id: "GUEST", name: "GUEST USER", email: "guest@example.com" });
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -125,8 +132,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
         saveRecentAccount(user);
         onLogin(user);
       } else {
-        const data = await res.json();
-        setError(data.error || "Login failed. Check your ID.");
+        setError("Login failed. Check your ID.");
       }
     } catch (err) {
       console.error("Login error:", err);
@@ -156,13 +162,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
       });
 
       if (res.ok) {
-        const user = await res.json();
-        setGeneratedId(user.id);
-        setId(user.id); // Auto-fill login
-        saveRecentAccount(user);
+        const newUser = await res.json();
+        setGeneratedId(newId);
+        setId(newId); // Auto-fill login
+        saveRecentAccount(newUser);
       } else {
-        const data = await res.json();
-        setError(data.error || "Registration failed.");
+        setError("Registration failed. Please try again.");
       }
     } catch (err) {
       console.error("Registration error:", err);
@@ -258,6 +263,24 @@ export function LoginView({ onLogin }: LoginViewProps) {
                     )}
                     <Button type="submit" className="w-full" size="lg">
                       Access Dashboard <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                    
+                    <div className="relative my-4">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                      </div>
+                    </div>
+
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => handleRecentLogin("GUEST")}
+                    >
+                      Guest Access (No ID Required)
                     </Button>
                   </form>
 

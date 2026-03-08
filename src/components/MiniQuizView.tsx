@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Zap, Clock, Brain, Calculator, BookOpen, Trophy, Flame, Star, ArrowRight } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { motion } from "motion/react";
 
 interface MiniQuizViewProps {
@@ -20,21 +21,16 @@ export function MiniQuizView({ onBack, onStartQuiz, userId }: MiniQuizViewProps)
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/stats?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        const categoryStats = data.categoryStats || [];
-        const totalQuestions = categoryStats.reduce((acc: number, curr: any) => acc + (Number(curr.total_questions) || 0), 0);
-        const totalScore = categoryStats.reduce((acc: number, curr: any) => acc + (Number(curr.total_score) || 0), 0);
-        const accuracy = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
-
-        setStats({
-          completed: data.totalQuizzes || 0,
-          accuracy: accuracy,
-          streak: data.streak || 0
-        });
-      })
-      .catch(err => console.error("Failed to fetch mini quiz stats", err));
+    try {
+      const data = storageService.getStats(userId);
+      setStats({
+        completed: data.totalQuizzes || 0,
+        accuracy: data.accuracy || 0,
+        streak: data.streak || 0
+      });
+    } catch (err) {
+      console.error("Failed to fetch mini quiz stats", err);
+    }
   }, [userId]);
   const quizOptions = [
     {

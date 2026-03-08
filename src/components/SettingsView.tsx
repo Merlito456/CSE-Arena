@@ -14,6 +14,7 @@ import {
   Brain, Target, Trophy, Zap, Download, RefreshCw, ArrowLeft,
   CheckCircle2, AlertCircle
 } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { cn } from "@/lib/utils";
 
 interface SettingsViewProps {
@@ -38,17 +39,24 @@ export function SettingsView({ onBack, userId, userName, userEmail, onUpdateProf
     setIsSaving(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/user/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: userId, name, email }),
-      });
-      if (res.ok) {
-        const updatedUser = await res.json();
+      if (userId === "GUEST") {
+        const updatedUser = { id: userId, name, email };
+        storageService.saveUser(updatedUser);
         onUpdateProfile(updatedUser.name, updatedUser.email);
         setMessage({ type: 'success', text: 'Profile updated successfully!' });
       } else {
-        setMessage({ type: 'error', text: 'Failed to update profile.' });
+        const res = await fetch("/api/user/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: userId, name, email }),
+        });
+        if (res.ok) {
+          const updatedUser = await res.json();
+          onUpdateProfile(updatedUser.name, updatedUser.email);
+          setMessage({ type: 'success', text: 'Profile updated successfully!' });
+        } else {
+          setMessage({ type: 'error', text: 'Failed to update profile.' });
+        }
       }
     } catch (error) {
       setMessage({ type: 'error', text: 'Connection error.' });

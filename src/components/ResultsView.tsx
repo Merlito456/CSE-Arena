@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { CheckCircle2, XCircle, RefreshCw, Home } from "lucide-react";
 import { motion } from "motion/react";
-import Markdown from "react-markdown";
+import { MathRenderer } from "./MathRenderer";
 
 interface ResultsViewProps {
   score: number;
@@ -57,6 +57,7 @@ export function ResultsView({ score, total, questions, answers, onRetry, onHome 
       <div className="space-y-4">
         <h3 className="text-xl font-semibold">Review Answers</h3>
         {questions.map((q, index) => {
+          if (!q) return null;
           const userAnswer = answers[q.id];
           const isCorrect = userAnswer === q.correctAnswerIndex;
 
@@ -95,7 +96,7 @@ export function ResultsView({ score, total, questions, answers, onRetry, onHome 
                 <div className="mt-2 text-muted-foreground bg-muted/30 p-3 rounded">
                   <span className="font-semibold text-foreground mb-1 block">Explanation: </span>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <Markdown>{q.explanation}</Markdown>
+                    <MathRenderer content={q.explanation} />
                   </div>
                 </div>
               </CardContent>

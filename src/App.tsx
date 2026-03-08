@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
-import { Category, Question } from "@/types";
-import { generateQuestions } from "@/services/gemini";
+import { Category, Question, QuizMode } from "@/types";
+import { getQuestionsFromDB } from "@/services/questions";
 import { SubjectSelector } from "@/components/SubjectSelector";
 import { QuizInterface } from "@/components/QuizInterface";
 import { ResultsView } from "@/components/ResultsView";
+import { BrainProfileView } from "@/components/BrainProfileView";
 import { StatsView } from "@/components/StatsView";
 import { Loading } from "@/components/Loading";
 import { Sidebar, ViewState } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
-import { ReviewMistakes } from "@/components/ReviewMistakes";
-import { SmartReview } from "@/components/SmartReview";
+import { PracticeMode } from "@/components/PracticeMode";
 import { ExamHistory } from "@/components/ExamHistory";
 import { MiniQuizView } from "@/components/MiniQuizView";
 import { FlashcardView } from "@/components/FlashcardView";
@@ -21,6 +21,8 @@ import { PremiumView } from "@/components/PremiumView";
 import { SettingsView } from "@/components/SettingsView";
 import { LoginView } from "@/components/LoginView";
 import { AdminDashboard } from "@/components/AdminDashboard";
+import { storageService } from "@/services/storageService";
+import { aiService } from "@/services/aiService";
 import { motion, AnimatePresence } from "motion/react";
 import { Menu, Clock, AlertCircle, CheckCircle2, Brain, BookOpenCheck, Construction } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,9 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [isMockExam, setIsMockExam] = useState(false);
+  const [quizMode, setQuizMode] = useState<QuizMode>("standard");
+  const [responseTimes, setResponseTimes] = useState<Record<string, number>>({});
+  const [practiceSubView, setPracticeSubView] = useState<string>("hub");
   
   // Flashcard State
   const [flashcardActive, setFlashcardActive] = useState(false);
@@ -75,27 +80,25 @@ export default function App() {
 
   const fetchStats = async () => {
     if (!userId) return;
+    if (userId === "GUEST") {
+      const data = storageService.getStats(userId);
+      setDashboardStats(data);
+      return;
+    }
     try {
-      const res = await fetch(`/api/stats?userId=${userId}`).catch(() => null);
-      if (!res?.ok) return;
-      const data = await res.json().catch(() => null);
-      if (!data) return;
-      
-      const categoryStats = data.categoryStats || [];
-      const totalQuestions = categoryStats.reduce((acc: number, curr: any) => acc + (Number(curr.total_questions) || 0), 0);
-      const totalScore = categoryStats.reduce((acc: number, curr: any) => acc + (Number(curr.total_score) || 0), 0);
-      const accuracy = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
-
-      setDashboardStats({
-        totalQuizzes: data.totalQuizzes,
-        questionsAnswered: totalQuestions,
-        accuracy: accuracy,
-        dailyQuestions: data.dailyQuestions,
-        streak: data.streak,
-        weakestSubject: data.weakestSubject
-      });
+      const res = await fetch(`/api/stats?userId=${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDashboardStats(data);
+      } else {
+        // Fallback to local
+        const data = storageService.getStats(userId);
+        setDashboardStats(data);
+      }
     } catch (error) {
       console.error("Failed to fetch dashboard stats", error);
+      const data = storageService.getStats(userId);
+      setDashboardStats(data);
     }
   };
 
@@ -105,12 +108,13 @@ export default function App() {
     setIsMockExam(false);
   };
 
-  const handleSelectCategory = async (category: Category, difficulty: string) => {
+  const handleSelectCategory = async (category: Category, difficulty: string, mode: QuizMode = 'standard') => {
     setLoading(true);
     setSelectedCategory(category);
-    setIsMockExam(false);
+    setQuizMode(mode);
+    setIsMockExam(mode === 'simulation');
     try {
-      const generatedQuestions = await generateQuestions(category, 10, difficulty);
+      const generatedQuestions = await getQuestionsFromDB(category, mode === 'quick-start' ? 5 : 10, difficulty);
       setQuestions(generatedQuestions);
       setQuizActive(true);
     } catch (error) {
@@ -123,6 +127,7 @@ export default function App() {
   const handleStartMockExam = async () => {
     setLoading(true);
     setIsMockExam(true);
+    setQuizMode('simulation');
     setSelectedCategory(null); // Mock exam has mixed categories
     try {
       // Generate questions from multiple categories based on settings
@@ -132,7 +137,7 @@ export default function App() {
       // Use selected difficulty, or "Moderate" if Mixed/Adaptive (Adaptive logic would be handled by prompt engineering or post-processing in a real app)
       const difficulty = mockSettings.difficulty === "Mixed" || mockSettings.difficulty === "Adaptive" ? "Moderate" : mockSettings.difficulty;
       
-      const promises = categories.map(cat => generateQuestions(cat, countPerCategory, difficulty));
+      const promises = categories.map(cat => getQuestionsFromDB(cat, countPerCategory, difficulty));
       const results = await Promise.all(promises);
       
       // Flatten and trim to exact count
@@ -147,27 +152,44 @@ export default function App() {
     }
   };
 
-  const handleFinishQuiz = async (finalScore: number, finalAnswers: Record<string, number>) => {
+  const handleFinishQuiz = async (finalScore: number, finalAnswers: Record<string, number>, finalResponseTimes: Record<string, number>) => {
     setScore(finalScore);
     setAnswers(finalAnswers);
+    setResponseTimes(finalResponseTimes);
     setQuizActive(false);
     
-    // Save results
-    try {
-      await fetch("/api/results", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          category: isMockExam ? "Mock Exam" : selectedCategory,
-          score: finalScore,
-          totalQuestions: questions.length,
-          answers: finalAnswers,
-          questions: questions,
-          userId: userId
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to save results:", error);
+    if (userId) {
+      const resultData = {
+        category: isMockExam ? "Mock Exam" : (selectedCategory || "General"),
+        score: finalScore,
+        totalQuestions: questions.length,
+        answers: finalAnswers,
+        questions: questions,
+        userId: userId,
+        mode: quizMode,
+        responseTimes: finalResponseTimes
+      };
+
+      // Save locally as fallback
+      storageService.saveResult(resultData);
+
+      if (userId !== "GUEST") {
+        try {
+          const res = await fetch("/api/results", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(resultData),
+          });
+          if (!res.ok) {
+            const errorData = await res.json();
+            console.error("Failed to save result to database:", errorData);
+          }
+        } catch (error) {
+          console.error("Network error saving result to database:", error);
+        }
+      }
+      
+      fetchStats(); // Refresh dashboard stats
     }
   };
 
@@ -193,20 +215,6 @@ export default function App() {
     }
   };
 
-  const handleRetryMistakes = (mistakesToRetry: any[]) => {
-    const retryQuestions: Question[] = mistakesToRetry.map(m => ({
-      id: m.id.toString(),
-      category: m.category as Category,
-      text: m.question_text,
-      options: m.options,
-      correctAnswerIndex: m.correct_index,
-      explanation: m.explanation
-    }));
-    
-    setQuestions(retryQuestions);
-    setQuizActive(true);
-  };
-
   const handleStartMiniQuiz = async (type: string, config: any) => {
     setLoading(true);
     setIsMockExam(false);
@@ -220,12 +228,12 @@ export default function App() {
         // In a real app, "ai-smart" would fetch specific weak areas
         const categories: Category[] = ['Numerical Reasoning', 'Verbal Reasoning', 'General Information', 'Logic'];
         const countPerCategory = 2; // 2 * 4 = 8 questions, slice to 5
-        const promises = categories.map(cat => generateQuestions(cat, countPerCategory, config.difficulty));
+        const promises = categories.map(cat => getQuestionsFromDB(cat, countPerCategory, config.difficulty));
         const results = await Promise.all(promises);
         quizQuestions = results.flat().sort(() => Math.random() - 0.5).slice(0, config.count);
       } else {
         // Specific category
-        quizQuestions = await generateQuestions(config.category, config.count, config.difficulty);
+        quizQuestions = await getQuestionsFromDB(config.category, config.count, config.difficulty);
       }
       
       setQuestions(quizQuestions);
@@ -240,12 +248,14 @@ export default function App() {
   const handleStartFlashcards = async (deckId: string, title: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/flashcards/deck/${deckId}`);
-      if (res.ok) {
-        const cards = await res.json();
-        setCurrentDeck({ id: deckId, title, cards });
-        setFlashcardActive(true);
-      }
+      // Local fallback flashcards since we're removing API calls
+      const localFlashcards = [
+        { id: "1", question: "What is the capital of the Philippines?", answer: "Manila" },
+        { id: "2", question: "Who is the national hero of the Philippines?", answer: "Jose Rizal" },
+        { id: "3", question: "What is the largest island in the Philippines?", answer: "Luzon" }
+      ];
+      setCurrentDeck({ id: deckId, title, cards: localFlashcards });
+      setFlashcardActive(true);
     } catch (error) {
       console.error("Failed to fetch flashcards:", error);
     } finally {
@@ -281,6 +291,7 @@ export default function App() {
           onFinish={handleFinishQuiz}
           onExit={handleExitQuiz}
           isMockExam={isMockExam}
+          mode={quizMode}
         />
       );
     }
@@ -297,6 +308,24 @@ export default function App() {
 
     // If we have questions and answers but quiz is not active, show results
     if (questions.length > 0 && Object.keys(answers).length > 0) {
+      if (quizMode === 'recognition') {
+        return (
+          <BrainProfileView
+            score={score}
+            total={questions.length}
+            questions={questions}
+            answers={answers}
+            responseTimes={responseTimes}
+            onRetry={handleRetry}
+            onHome={handleExitQuiz}
+            onNavigateToPractice={(subView) => {
+              setPracticeSubView(subView);
+              handleExitQuiz();
+              setCurrentView('practice');
+            }}
+          />
+        );
+      }
       return (
         <ResultsView
           score={score}
@@ -311,7 +340,7 @@ export default function App() {
 
     switch (currentView) {
       case "dashboard":
-        return <Dashboard onNavigate={handleNavigate} stats={dashboardStats} />;
+        return <Dashboard onNavigate={handleNavigate} userId={userId} stats={dashboardStats} />;
       case "subjects":
         return (
           <div className="space-y-6">
@@ -446,36 +475,16 @@ export default function App() {
         );
       case "stats":
         return <StatsView onBack={() => handleNavigate("dashboard")} userId={userId} />;
-      case "mistakes":
+      case "practice":
         return (
-          <ReviewMistakes 
-            onBack={() => handleNavigate("dashboard")} 
-            onNavigate={handleNavigate}
-            onRetry={handleRetryMistakes}
-            userId={userId}
-          />
-        );
-      case "retry-mistakes":
-        return (
-          <ReviewMistakes 
-            onBack={() => handleNavigate("dashboard")} 
-            onNavigate={handleNavigate}
-            onRetry={handleRetryMistakes}
-            autoStart={true}
-            userId={userId}
-          />
-        );
-      case "smart-review":
-        return (
-          <SmartReview 
+          <PracticeMode 
             onBack={() => handleNavigate("dashboard")} 
             onStartQuiz={handleSelectCategory}
-            stats={dashboardStats}
+            onStartMockExam={handleStartMockExam}
             userId={userId}
+            initialSubView={practiceSubView as any}
           />
         );
-      case "question-bank":
-        return <PlaceholderView title="Question Bank" icon={BookOpenCheck} description="Browse and search through thousands of practice questions." />;
       case "history":
         return <ExamHistory onBack={() => handleNavigate("dashboard")} userId={userId} />;
       case "mini-quizzes":
@@ -523,7 +532,7 @@ export default function App() {
           />
         );
       default:
-        return <Dashboard onNavigate={handleNavigate} stats={dashboardStats} />;
+        return <Dashboard onNavigate={handleNavigate} userId={userId} stats={dashboardStats} />;
     }
   };
 

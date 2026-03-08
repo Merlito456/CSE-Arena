@@ -14,7 +14,7 @@ export function Loading() {
         transition={{ delay: 0.5 }}
         className="text-lg font-medium text-muted-foreground"
       >
-        Generating questions with Gemini AI...
+        Generating questions with AI...
       </motion.p>
     </div>
   );

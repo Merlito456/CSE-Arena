@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { ArrowLeft, Calendar, Trophy, Target, Clock } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { Badge } from "./ui/badge";
 
 interface ExamResult {
@@ -23,17 +24,47 @@ export function ExamHistory({ onBack, userId }: ExamHistoryProps) {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/history?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        setHistory(data);
-        setLoading(false);
-      })
-      .catch(err => {
+    
+    const fetchHistory = async () => {
+      setLoading(true);
+      try {
+        if (userId === "GUEST") {
+          const data = storageService.getHistory(userId);
+          const formattedHistory = data.map((item: any, index: number) => ({
+            id: index,
+            category: item.category,
+            score: item.score,
+            total_questions: item.totalQuestions,
+            created_at: item.timestamp
+          }));
+          setHistory(formattedHistory);
+        } else {
+          const res = await fetch(`/api/history?userId=${userId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setHistory(data);
+          } else {
+            // Fallback
+            const data = storageService.getHistory(userId);
+            const formattedHistory = data.map((item: any, index: number) => ({
+              id: index,
+              category: item.category,
+              score: item.score,
+              total_questions: item.totalQuestions,
+              created_at: item.timestamp
+            }));
+            setHistory(formattedHistory);
+          }
+        }
+      } catch (err) {
         console.error("Failed to fetch history", err);
+      } finally {
         setLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    fetchHistory();
+  }, [userId]);
 
   if (loading) {
     return (

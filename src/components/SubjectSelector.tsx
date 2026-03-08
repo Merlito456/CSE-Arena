@@ -1,6 +1,7 @@
 import { Category } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "./ui/card";
 import { BookOpen, Brain, Calculator, FileText, Scale, Signal, Play, ChevronDown, ChevronUp, Star, AlertTriangle, TrendingUp } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
@@ -75,35 +76,46 @@ export function SubjectSelector({ onSelect, userId }: SubjectSelectorProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState("Moderate");
   const [expandedSubject, setExpandedSubject] = useState<Category | null>(null);
   const [stats, setStats] = useState<Record<Category, SubjectStats>>({} as any);
+  const [dbCategories, setDbCategories] = useState<Category[]>([]);
 
   useEffect(() => {
-    if (!userId) return;
-    // Fetch stats for each subject
-    fetch(`/api/stats?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        const newStats: Record<Category, SubjectStats> = {} as any;
-        const categoryStats = data.categoryStats || [];
-        categoryStats.forEach((stat: any) => {
-          const accuracy = stat.total_questions > 0 ? (stat.total_score / stat.total_questions) * 100 : 0;
-          let status: "Weak" | "Strong" | "Improving" | "New" = "New";
-          
-          if (stat.total_questions > 10) {
-            if (accuracy < 50) status = "Weak";
-            else if (accuracy > 80) status = "Strong";
-            else status = "Improving";
-          }
+    // Local categories fallback
+    const localCategories: Category[] = [
+      'Numerical Reasoning',
+      'Verbal Reasoning',
+      'General Information',
+      'Clerical Ability',
+      'Logic'
+    ];
+    setDbCategories(localCategories);
 
-          newStats[stat.category as Category] = {
-            accuracy,
-            totalQuestions: stat.total_questions,
-            status
-          };
-        });
-        setStats(newStats);
-      })
-      .catch(err => console.error("Failed to fetch stats for subjects", err));
-  }, []);
+    if (!userId) return;
+    // Fetch stats for each subject locally
+    try {
+      const data = storageService.getStats(userId);
+      const newStats: Record<Category, SubjectStats> = {} as any;
+      const categoryStats = data.categoryStats || [];
+      categoryStats.forEach((stat: any) => {
+        const accuracy = stat.total_questions > 0 ? (stat.total_score / stat.total_questions) * 100 : 0;
+        let status: "Weak" | "Strong" | "Improving" | "New" = "New";
+        
+        if (stat.total_questions > 10) {
+          if (accuracy < 50) status = "Weak";
+          else if (accuracy > 80) status = "Strong";
+          else status = "Improving";
+        }
+
+        newStats[stat.category as Category] = {
+          accuracy,
+          totalQuestions: stat.total_questions,
+          status
+        };
+      });
+      setStats(newStats);
+    } catch (err) {
+      console.error("Failed to fetch stats for subjects", err);
+    }
+  }, [userId]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -117,6 +129,21 @@ export function SubjectSelector({ onSelect, userId }: SubjectSelectorProps) {
         return null;
     }
   };
+
+  // Merge hardcoded subjects with DB categories
+  const allSubjects = [...subjects];
+  dbCategories.forEach(dbCat => {
+    if (!allSubjects.some(s => s.id === dbCat)) {
+      allSubjects.push({
+        id: dbCat,
+        title: dbCat,
+        icon: BookOpen,
+        color: 'bg-slate-100 text-slate-700',
+        description: `Practice questions for ${dbCat}.`,
+        subtopics: ['General Practice']
+      });
+    }
+  });
 
   return (
     <div className="space-y-6">
@@ -142,7 +169,7 @@ export function SubjectSelector({ onSelect, userId }: SubjectSelectorProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {subjects.map((subject, index) => {
+        {allSubjects.map((subject, index) => {
           const subjectStats = stats[subject.id] || { accuracy: 0, totalQuestions: 0, status: "New" };
           const isExpanded = expandedSubject === subject.id;
 

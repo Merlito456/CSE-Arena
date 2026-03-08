@@ -88,11 +88,11 @@ async function startServer() {
   // Save Quiz Result
   app.post("/api/results", async (req, res) => {
     try {
-      const { category, score, totalQuestions, answers, questions, userId } = req.body;
+      const { category, score, totalQuestions, answers, questions, userId, mode } = req.body;
       
       const [quizResult] = await sql`
-        INSERT INTO quiz_results (category, score, total_questions, user_id) 
-        VALUES (${category}, ${score}, ${totalQuestions}, ${userId})
+        INSERT INTO quiz_results (category, score, total_questions, user_id, mode) 
+        VALUES (${category}, ${score}, ${totalQuestions}, ${userId}, ${mode || 'practice'})
         RETURNING id
       `;
       
@@ -101,14 +101,19 @@ async function startServer() {
       const answerRows = questions.map((q: any) => {
         const selected = answers[q.id];
         const isCorrect = selected === q.correctAnswerIndex;
+        
+        // Ensure question_id is a valid UUID, otherwise leave it null
+        const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q.id);
+        
         return {
           result_id: resultId,
           user_id: userId,
+          question_id: isValidUuid ? q.id : null,
           category: category,
           question_text: q.text,
-          options: q.options,
-          correct_index: q.correctAnswerIndex,
-          selected_index: selected,
+          options: sql.json(q.options),
+          correct_answer: q.options[q.correctAnswerIndex],
+          selected_answer: selected !== undefined ? q.options[selected] : null,
           explanation: q.explanation,
           is_correct: isCorrect
         };
@@ -139,10 +144,15 @@ async function startServer() {
         LIMIT 50
       `;
       
-      const parsedMistakes = mistakes.map((m: any) => ({
-        ...m,
-        options: typeof m.options === 'string' ? JSON.parse(m.options) : m.options
-      }));
+      const parsedMistakes = mistakes.map((m: any) => {
+        const options = typeof m.options === 'string' ? JSON.parse(m.options) : m.options;
+        return {
+          ...m,
+          options,
+          correct_index: options.indexOf(m.correct_answer),
+          selected_index: m.selected_answer ? options.indexOf(m.selected_answer) : null
+        };
+      });
       
       res.json(parsedMistakes);
     } catch (error) {
@@ -303,23 +313,66 @@ async function startServer() {
     }
   });
 
+  // Get All Categories
+  app.get("/api/categories", async (req, res) => {
+    try {
+      const categories = await sql`
+        SELECT DISTINCT category FROM questions
+      `;
+      res.json(categories.map(c => c.category));
+    } catch (error) {
+      console.error("Failed to fetch categories:", error);
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  });
+
   // Get Questions (Practice)
   app.get("/api/questions", async (req, res) => {
     try {
-      const { category, limit } = req.query;
-      const questions = await sql`
-        SELECT * FROM questions 
-        WHERE category = ${category as string}
-        ORDER BY RANDOM()
-        LIMIT ${parseInt(limit as string) || 10}
-      `;
+      const { category, limit, difficulty } = req.query;
+      const questionLimit = parseInt(limit as string) || 10;
+      
+      console.log(`🔍 Fetching questions: category=${category}, difficulty=${difficulty}, limit=${questionLimit}`);
+
+      // Try with specific difficulty first
+      let questions = [];
+      
+      if (difficulty && difficulty !== 'Mixed' && difficulty !== 'Adaptive') {
+        questions = await sql`
+          SELECT * FROM questions 
+          WHERE category = ${category as string} 
+          AND difficulty = ${difficulty as string}
+          ORDER BY RANDOM()
+          LIMIT ${questionLimit}
+        `;
+      }
+
+      // If no questions found with specific difficulty, or no difficulty specified
+      if (questions.length === 0) {
+        console.log(`⚠️ No questions found for ${category} with difficulty ${difficulty}. Trying any difficulty...`);
+        questions = await sql`
+          SELECT * FROM questions 
+          WHERE category = ${category as string}
+          ORDER BY RANDOM()
+          LIMIT ${questionLimit}
+        `;
+      }
+
+      if (questions.length === 0) {
+        console.log(`❌ Still no questions found for category: ${category}`);
+        // Check if there are ANY questions in this category at all
+        const [count] = await sql`SELECT COUNT(*) FROM questions WHERE category = ${category as string}`;
+        console.log(`📊 Total questions in DB for ${category}: ${count.count}`);
+      }
+      
       res.json(questions.map(q => ({
         id: q.id,
         category: q.category,
         text: q.question_text,
         options: q.options,
         correctAnswerIndex: q.options.indexOf(q.correct_answer),
-        explanation: q.explanation
+        explanation: q.explanation,
+        tags: q.tags || []
       })));
     } catch (error) {
       console.error("Failed to fetch questions:", error);
@@ -352,7 +405,8 @@ async function startServer() {
         options: q.options,
         correct_answer: q.options[q.correctAnswerIndex],
         explanation: q.explanation,
-        difficulty: q.difficulty || 'Moderate'
+        difficulty: q.difficulty || 'Moderate',
+        tags: q.tags || []
       }));
 
       await sql`

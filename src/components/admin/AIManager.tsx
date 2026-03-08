@@ -9,8 +9,9 @@ import {
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { cn } from "@/lib/utils";
 import { AITab } from "./types";
-import { generateQuestions } from "@/services/gemini";
+import { aiService } from "@/services/aiService";
 import { Category, Question } from "@/types";
+import { MathRenderer } from "@/components/MathRenderer";
 
 export const AIManager = () => {
   const [activeAITab, setActiveAITab] = useState<AITab>("generation");
@@ -141,8 +142,10 @@ const BoardSynthesis = () => {
     setIsGenerating(true);
     setSaveSuccess(false);
     try {
-      const items = await generateQuestions(arena, itemCount, "Moderate");
-      setGeneratedItems(items);
+      // AI generation removed. We will just simulate an empty result or show an error.
+      // In a real scenario, this entire component might be removed or repurposed.
+      alert("AI Generation has been disabled. Please add questions manually via the Content CMS.");
+      setGeneratedItems([]);
     } catch (error) {
       console.error("Generation failed", error);
     } finally {
@@ -308,26 +311,36 @@ const BoardSynthesis = () => {
             </div>
             
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-              {generatedItems.map((item, i) => (
-                <div key={i} className="bg-[#1E293B] rounded-2xl p-6 border border-slate-800 hover:border-blue-500/30 transition-colors group">
+              {generatedItems.map((item, i) => {
+                if (!item) return null;
+                return (
+                  <div key={i} className="bg-[#1E293B] rounded-2xl p-6 border border-slate-800 hover:border-blue-500/30 transition-colors group">
                   <div className="flex gap-4">
                     <span className="text-blue-500 font-black text-lg">0{i + 1}</span>
                     <div className="space-y-4 flex-1">
-                      <p className="text-white font-bold leading-relaxed">{item.text}</p>
+                      <p className="text-white font-bold leading-relaxed">
+                        <MathRenderer content={item.text} />
+                      </p>
                       <div className="grid grid-cols-2 gap-2">
                         {item.options.map((opt, oi) => (
                           <div key={oi} className={cn(
                             "px-4 py-2 rounded-lg text-xs font-bold",
                             oi === item.correctAnswerIndex ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-slate-800 text-slate-400"
                           )}>
-                            {opt}
+                            <MathRenderer content={opt} />
                           </div>
                         ))}
+                      </div>
+                      {/* Show explanation in admin view too */}
+                      <div className="mt-2 text-xs text-slate-400 bg-slate-800/50 p-3 rounded-lg">
+                        <span className="font-bold text-slate-300 block mb-1">Explanation:</span>
+                        <MathRenderer content={item.explanation} />
                       </div>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="pt-6 border-t border-slate-800 flex gap-4">

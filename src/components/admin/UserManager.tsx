@@ -136,8 +136,10 @@ export const UserManager = () => {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
+              {filteredUsers.map((user) => {
+                if (!user) return null;
+                return (
+                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs">
@@ -184,7 +186,8 @@ export const UserManager = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           )}

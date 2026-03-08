@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Question, QuizState } from "@/types";
+import { Question, QuizState, QuizMode } from "@/types";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
 import { Progress } from "./ui/progress";
@@ -8,46 +8,37 @@ import { motion, AnimatePresence } from "motion/react";
 import { CheckCircle2, XCircle, ArrowRight, Flag, Clock, Grid, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import Markdown from "react-markdown";
+import { MathRenderer } from "./MathRenderer";
 
 interface QuizInterfaceProps {
   questions: Question[];
-  onFinish: (score: number, answers: Record<string, number>) => void;
+  onFinish: (score: number, answers: Record<string, number>, responseTimes: Record<string, number>) => void;
   onExit: () => void;
   isMockExam?: boolean;
+  mode?: QuizMode;
 }
 
-export function QuizInterface({ questions, onFinish, onExit, isMockExam = false }: QuizInterfaceProps) {
+export function QuizInterface({ questions, onFinish, onExit, isMockExam = false, mode = 'standard' }: QuizInterfaceProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [responseTimes, setResponseTimes] = useState<Record<string, number>>({});
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [startTime, setStartTime] = useState(Date.now());
   
   // Timer State
   const [timeElapsed, setTimeElapsed] = useState(0); // in seconds
-  const [timeLeft, setTimeLeft] = useState(questions.length * 60); // 1 minute per question for mock
+  const [timeLeft, setTimeLeft] = useState(mode === 'looksfam' ? 30 : questions.length * 60);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeElapsed(prev => prev + 1);
-      if (isMockExam) {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            handleFinish();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isMockExam]);
+    setStartTime(Date.now());
+  }, [currentIndex]);
 
   // Restore selection if question was already answered
   useEffect(() => {
+    if (!questions || questions.length === 0 || !questions[currentIndex]) return;
+    
     const currentQId = questions[currentIndex].id;
     if (answers[currentQId] !== undefined) {
       setSelectedOption(answers[currentQId]);
@@ -61,7 +52,42 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
     }
   }, [currentIndex, questions, answers, isMockExam]);
 
-  const currentQuestion = questions[currentIndex];
+  useEffect(() => {
+    if (mode === 'looksfam') {
+      setTimeLeft(30);
+    } else if (mode === 'recognition') {
+      setTimeLeft(15); // 15s per question for recognition engine
+    }
+  }, [currentIndex, mode]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeElapsed(prev => prev + 1);
+      
+      const shouldTickDown = isMockExam || mode === 'simulation' || mode === 'looksfam' || mode === 'psych' || mode === 'recognition';
+      
+      if (shouldTickDown) {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            if (mode === 'looksfam' || mode === 'recognition') {
+              handleNext(); // Auto-advance on timeout for LooksFam and Recognition
+              return mode === 'looksfam' ? 30 : 15;
+            }
+            if (isMockExam || mode === 'simulation') {
+              clearInterval(timer);
+              handleFinish();
+              return 0;
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isMockExam, mode, questions.length]);
+
   const progress = ((Object.keys(answers).length) / questions.length) * 100;
 
   const formatTime = (seconds: number) => {
@@ -70,31 +96,15 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSelectOption = (index: number) => {
-    if (showExplanation && !isMockExam) return; // Prevent changing answer in practice mode if already submitted
-    setSelectedOption(index);
-  };
-
-  const handleToggleFlag = () => {
-    setFlagged(prev => ({
-      ...prev,
-      [currentQuestion.id]: !prev[currentQuestion.id]
-    }));
-  };
-
-  const handleSubmitAnswer = () => {
-    if (selectedOption === null) return;
-    
-    const newAnswers = { ...answers, [currentQuestion.id]: selectedOption };
-    setAnswers(newAnswers);
-    
-    if (!isMockExam) {
-      setShowExplanation(true);
-    } else {
-      // In mock exam, auto advance or just save? 
-      // Usually in mock exams you just select and move on.
-      // Let's just save selection. User manually clicks next.
-    }
+  const handleFinish = () => {
+    // Calculate score
+    let score = 0;
+    questions.forEach(q => {
+      if (answers[q.id] === q.correctAnswerIndex) {
+        score++;
+      }
+    });
+    onFinish(score, answers, responseTimes);
   };
 
   const handleNext = () => {
@@ -107,6 +117,48 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
       setCurrentIndex(prev => prev + 1);
     } else {
       handleFinish();
+    }
+  };
+
+  const handleSelectOption = (index: number) => {
+    if (showExplanation && !isMockExam && mode !== 'recognition') return; // Prevent changing answer in practice mode if already submitted
+    setSelectedOption(index);
+
+    // Recognition Mode: Immediate auto-advance
+    if (mode === 'recognition') {
+      const timeTaken = (Date.now() - startTime) / 1000;
+      setResponseTimes(prev => ({ ...prev, [currentQuestion.id]: timeTaken }));
+      setAnswers(prev => ({ ...prev, [currentQuestion.id]: index }));
+      
+      // Small delay to show selection before moving
+      setTimeout(() => {
+        if (currentIndex < questions.length - 1) {
+          setCurrentIndex(prev => prev + 1);
+        } else {
+          handleFinish();
+        }
+      }, 200);
+    }
+  };
+
+  const handleToggleFlag = () => {
+    setFlagged(prev => ({
+      ...prev,
+      [currentQuestion.id]: !prev[currentQuestion.id]
+    }));
+  };
+
+  const handleSubmitAnswer = () => {
+    if (selectedOption === null) return;
+    
+    const timeTaken = (Date.now() - startTime) / 1000;
+    setResponseTimes(prev => ({ ...prev, [currentQuestion.id]: timeTaken }));
+
+    const newAnswers = { ...answers, [currentQuestion.id]: selectedOption };
+    setAnswers(newAnswers);
+    
+    if (!isMockExam && mode !== 'simulation') {
+      setShowExplanation(true);
     }
   };
 
@@ -123,16 +175,16 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
     setCurrentIndex(index);
   };
 
-  const handleFinish = () => {
-    // Calculate score
-    let score = 0;
-    questions.forEach(q => {
-      if (answers[q.id] === q.correctAnswerIndex) {
-        score++;
-      }
-    });
-    onFinish(score, answers);
-  };
+  const currentQuestion = questions[currentIndex];
+  
+  if (!currentQuestion) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <p className="text-lg font-medium text-muted-foreground">No questions found.</p>
+        <Button onClick={onExit}>Go Back</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-2 md:p-4 space-y-4 md:space-y-6">
@@ -148,7 +200,7 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
             </Button>
             
             <Badge variant="outline" className="text-xs truncate max-w-[120px] md:max-w-none">
-              {isMockExam ? "Mock Exam" : currentQuestion.category}
+              {isMockExam ? "Mock Exam" : currentQuestion?.category || "General"}
             </Badge>
           </div>
 
@@ -282,12 +334,12 @@ export function QuizInterface({ questions, onFinish, onExit, isMockExam = false 
                   animate={{ opacity: 1, height: "auto" }}
                   className="bg-muted/50 p-4 rounded-lg text-sm"
                 >
-                  <p className="font-semibold mb-1 flex items-center gap-2">
+                  <div className="font-semibold mb-1 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-green-500" /> 
                     Explanation
-                  </p>
+                  </div>
                   <div className="text-muted-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-                    <Markdown>{currentQuestion.explanation}</Markdown>
+                    <MathRenderer content={currentQuestion.explanation} />
                   </div>
                 </motion.div>
               </div>

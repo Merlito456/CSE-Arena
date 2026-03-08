@@ -2,19 +2,21 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { AlertCircle, CheckCircle2, XCircle, ArrowLeft, RefreshCw, BookOpen, Trophy, ChevronDown, ChevronUp } from "lucide-react";
+import { storageService } from "@/services/storageService";
 import { motion, AnimatePresence } from "motion/react";
 import { Badge } from "./ui/badge";
 import { Category } from "@/types";
+import { MathRenderer } from "./MathRenderer";
 
 export interface Mistake {
-  id: number;
+  id: string;
   category: string;
   question_text: string;
   options: string[];
   correct_index: number;
   selected_index: number;
   explanation: string;
-  created_at: string;
+  created_at: string | number;
 }
 
 interface ReviewMistakesProps {
@@ -28,24 +30,46 @@ interface ReviewMistakesProps {
 export function ReviewMistakes({ onBack, onNavigate, onRetry, autoStart, userId }: ReviewMistakesProps) {
   const [mistakes, setMistakes] = useState<Mistake[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedExplanation, setExpandedExplanation] = useState<number | null>(null);
+  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`/api/mistakes?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        setMistakes(data);
-        setLoading(false);
-        if (autoStart && data.length > 0) {
-          onRetry(data);
+    
+    const fetchMistakes = async () => {
+      setLoading(true);
+      try {
+        if (userId === "GUEST") {
+          const data = storageService.getMistakes();
+          setMistakes(data);
+          if (autoStart && data.length > 0) {
+            onRetry(data);
+          }
+        } else {
+          const res = await fetch(`/api/mistakes?userId=${userId}`);
+          if (res.ok) {
+            const data = await res.json();
+            setMistakes(data);
+            if (autoStart && data.length > 0) {
+              onRetry(data);
+            }
+          } else {
+            // Fallback
+            const data = storageService.getMistakes();
+            setMistakes(data);
+            if (autoStart && data.length > 0) {
+              onRetry(data);
+            }
+          }
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.error("Failed to fetch mistakes", err);
+      } finally {
         setLoading(false);
-      });
-  }, []);
+      }
+    };
+
+    fetchMistakes();
+  }, [userId]);
 
   if (loading) {
     return (
@@ -117,9 +141,11 @@ export function ReviewMistakes({ onBack, onNavigate, onRetry, autoStart, userId 
                     </div>
                     
                     <div className="grid gap-4">
-                        {categoryMistakes.map((mistake) => (
-                            <motion.div 
-                                key={mistake.id}
+                        {categoryMistakes.map((mistake) => {
+                            if (!mistake) return null;
+                            return (
+                                <motion.div 
+                                    key={mistake.id}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                             >
@@ -176,23 +202,24 @@ export function ReviewMistakes({ onBack, onNavigate, onRetry, autoStart, userId 
                                                     exit={{ opacity: 0, height: 0 }}
                                                     className="bg-muted/50 p-4 rounded-lg text-sm mt-2"
                                                 >
-                                                    <p className="font-semibold mb-2 flex items-center gap-2">
+                                                    <div className="font-semibold mb-2 flex items-center gap-2">
                                                         <BookOpen className="w-4 h-4 text-primary" /> Explanation
-                                                    </p>
-                                                    <p className="text-muted-foreground leading-relaxed">
-                                                        {mistake.explanation}
-                                                    </p>
+                                                    </div>
+                                                    <div className="text-muted-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                                                        <MathRenderer content={mistake.explanation} />
+                                                    </div>
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>
                                     </CardContent>
                                 </Card>
                             </motion.div>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
-            ))}
-        </div>
+            </div>
+        ))}
+    </div>
       )}
     </div>
   );
