@@ -1,45 +1,34 @@
-import postgres from 'postgres';
-console.log('🔴 SERVER TS: Starting with forced Supabase connection test...');
-
-// Force a direct connection BEFORE anything else
-const TEST_SQL = postgres('postgresql://postgres.qipmigufldprvjynbhci:jwLn2r4cqBcmxhly@aws-1-ap-south-1.pooler.supabase.com:6543/postgres', {
-  ssl: 'require',
-});
-
-// Test it immediately
-(async () => {
-  try {
-    const result = await TEST_SQL`SELECT NOW() as time`;
-    console.log('🔴 SERVER TS: ✅ FORCED CONNECTION WORKS!', result[0].time);
-  } catch (error) {
-    console.error('🔴 SERVER TS: ❌ FORCED CONNECTION FAILED:', error);
-  }
-})();
-
 import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import { initDb, sql } from "./src/db/index";
+import path from "path";
+
+console.log("🚀 SERVER: Starting server process...");
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Initialize Database
-  console.log("Database: Initializing...");
-  
-  // 🔍 DEBUG: Log the sql object to see its configuration
-  console.log("🔍 DEBUG: sql object created from:", sql);
-  
-  await initDb();
+  // 1. Bind port IMMEDIATELY to satisfy Cloud Run health check
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 SERVER: Server listening on port ${PORT}`);
+  });
 
-  // Test connection
-  try {
-    const result = await sql`SELECT NOW() as time`;
-    console.log('✅ Connected to Supabase!', result[0].time);
-  } catch (error) {
-    console.error('❌ Database connection failed:', error);
-  }
+  console.log(`🚀 SERVER: Port configured as ${PORT}`);
+
+  // 2. Initialize Database in background
+  console.log("🚀 SERVER: Database: Initializing...");
+  initDb().then(async () => {
+    try {
+      const result = await sql`SELECT NOW() as time`;
+      console.log('🚀 SERVER: ✅ Connected to Supabase!', result[0].time);
+    } catch (error) {
+      console.error('🚀 SERVER: ❌ Database connection test failed:', error);
+    }
+  }).catch(error => {
+    console.error('🚀 SERVER: ❌ Database initialization failed:', error);
+  });
 
   app.use(express.json());
 
@@ -49,10 +38,31 @@ async function startServer() {
       await sql`SELECT 1`;
       res.json({ status: "ok", db: "connected", geminiKeySet: !!process.env.GEMINI_API_KEY });
     } catch (error) {
-      console.error("Database health check failed:", error);
+      console.error("🚀 SERVER: Database health check failed:", error);
       res.status(500).json({ status: "error", db: "disconnected", error: (error as any).message });
     }
   });
+
+  // Helper: Check and Update Premium Status
+  async function checkPremiumStatus(userId: string) {
+    if (!userId || userId === "GUEST") return false;
+    
+    const [user] = await sql`SELECT is_premium, premium_until FROM users WHERE id = ${userId}`;
+    if (!user) return false;
+
+    if (user.is_premium && user.premium_until) {
+      const now = new Date();
+      const expiry = new Date(user.premium_until);
+      
+      if (now > expiry) {
+        console.log(`⏳ Premium expired for user: ${userId}`);
+        await sql`UPDATE users SET is_premium = false WHERE id = ${userId}`;
+        return false;
+      }
+    }
+    
+    return user.is_premium;
+  }
 
   // User Login/Register
   app.post("/api/auth/login", async (req, res) => {
@@ -63,9 +73,14 @@ async function startServer() {
       const [user] = await sql`SELECT * FROM users WHERE id = ${id}`;
       
       if (user) {
+        // Check premium expiration
+        const isPremium = await checkPremiumStatus(id);
+        
         // Update last active
         await sql`UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE id = ${id}`;
-        return res.json(user);
+        
+        const updatedUser = { ...user, is_premium: isPremium };
+        return res.json(updatedUser);
       }
  
       // Create new user if registering
@@ -88,7 +103,7 @@ async function startServer() {
   // Save Quiz Result
   app.post("/api/results", async (req, res) => {
     try {
-      const { category, score, totalQuestions, answers, questions, userId, mode } = req.body;
+      const { category, score, totalQuestions, answers, questions, userId, mode, responseTimes } = req.body;
       
       const [quizResult] = await sql`
         INSERT INTO quiz_results (category, score, total_questions, user_id, mode) 
@@ -101,6 +116,7 @@ async function startServer() {
       const answerRows = questions.map((q: any) => {
         const selected = answers[q.id];
         const isCorrect = selected === q.correctAnswerIndex;
+        const responseTime = responseTimes ? (responseTimes[q.id] || 0) : 0;
         
         // Ensure question_id is a valid UUID, otherwise leave it null
         const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q.id);
@@ -109,13 +125,15 @@ async function startServer() {
           result_id: resultId,
           user_id: userId,
           question_id: isValidUuid ? q.id : null,
-          category: category,
+          category: q.category || category,
           question_text: q.text,
           options: sql.json(q.options),
-          correct_answer: q.options[q.correctAnswerIndex],
-          selected_answer: selected !== undefined ? q.options[selected] : null,
+          correct_index: q.correctAnswerIndex,
+          selected_index: selected !== undefined ? selected : null,
           explanation: q.explanation,
-          is_correct: isCorrect
+          is_correct: isCorrect,
+          difficulty: q.difficulty || 'Moderate',
+          response_time: responseTime
         };
       });
 
@@ -191,6 +209,14 @@ async function startServer() {
         AND user_id = ${userId as string}
       `;
 
+      // Daily Quizzes (Quizzes taken today)
+      const [dailyQuizzes] = await sql`
+        SELECT COUNT(*) as count 
+        FROM quiz_results 
+        WHERE created_at::date = CURRENT_DATE
+        AND user_id = ${userId as string}
+      `;
+
       // Simple Streak Calculation
       const distinctDays = await sql`
         SELECT DISTINCT created_at::date as day 
@@ -210,6 +236,51 @@ async function startServer() {
         LIMIT 1
       `;
 
+      // Advanced Analytics (Premium)
+      const [avgResponseTime] = await sql`
+        SELECT AVG(response_time) as avg_time 
+        FROM user_answers 
+        WHERE user_id = ${userId as string} AND response_time > 0
+      `;
+
+      const difficultyStats = await sql`
+        SELECT difficulty, COUNT(*) as total, SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct
+        FROM user_answers
+        WHERE user_id = ${userId as string}
+        GROUP BY difficulty
+      `;
+
+      const mistakeTopics = await sql`
+        SELECT category, COUNT(*) as count
+        FROM user_answers
+        WHERE user_id = ${userId as string} AND is_correct = false
+        GROUP BY category
+        ORDER BY count DESC
+        LIMIT 3
+      `;
+
+      // Readiness Calculation
+      const [overallAccuracy] = await sql`
+        SELECT CAST(SUM(score) AS FLOAT) / SUM(total_questions) as accuracy
+        FROM quiz_results
+        WHERE user_id = ${userId as string}
+      `;
+
+      const readinessScore = Math.round((parseFloat(overallAccuracy.accuracy || '0') * 0.7 + (parseInt(totalQuizzes.count) > 10 ? 0.3 : (parseInt(totalQuizzes.count) / 10) * 0.3)) * 100);
+
+      const [userRow] = await sql`SELECT is_premium, premium_until FROM users WHERE id = ${userId as string}`;
+      let isPremium = userRow ? userRow.is_premium : false;
+
+      // Check expiration if premium
+      if (isPremium && userRow.premium_until) {
+        const now = new Date();
+        const expiry = new Date(userRow.premium_until);
+        if (now > expiry) {
+          await sql`UPDATE users SET is_premium = false WHERE id = ${userId as string}`;
+          isPremium = false;
+        }
+      }
+
       res.json({
         categoryStats: stats.map(s => ({
           ...s,
@@ -219,11 +290,22 @@ async function startServer() {
         })),
         totalQuizzes: parseInt(totalQuizzes.count),
         dailyQuestions: parseInt(dailyProgress.count),
+        dailyQuizzes: parseInt(dailyQuizzes.count),
         streak: calculateStreak(distinctDays.map(d => ({ day: d.day.toISOString().split('T')[0] }))),
         weakestSubject: weakest ? {
           ...weakest,
           accuracy: parseFloat(weakest.accuracy)
-        } : null
+        } : null,
+        isPremium,
+        advanced: {
+          avgResponseTime: parseFloat(avgResponseTime.avg_time || '0'),
+          difficultyStats: difficultyStats.map(d => ({
+            difficulty: d.difficulty,
+            accuracy: d.total > 0 ? (d.correct / d.total) * 100 : 0
+          })),
+          mistakeTopics: mistakeTopics.map(t => t.category),
+          readinessScore: Math.min(readinessScore, 100)
+        }
       });
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -427,11 +509,17 @@ async function startServer() {
       const [premiumUsers] = await sql`SELECT COUNT(*) as count FROM users WHERE is_premium = true`;
       const [totalQuizzes] = await sql`SELECT COUNT(*) as count FROM quiz_results`;
       
+      const [revenueToday] = await sql`
+        SELECT COALESCE(SUM(amount), 0) as total 
+        FROM payment_requests 
+        WHERE status = 'verified' AND DATE(verified_at) = CURRENT_DATE
+      `;
+      
       res.json({
         totalUsers: parseInt(totalUsers.count),
         premiumUsers: parseInt(premiumUsers.count),
         totalQuizzes: parseInt(totalQuizzes.count),
-        revenueToday: 0,
+        revenueToday: parseInt(revenueToday.total),
         aiUsageToday: 0
       });
     } catch (error) {
@@ -443,9 +531,25 @@ async function startServer() {
   // Admin: Get Revenue Data
   app.get("/api/admin/revenue", async (req, res) => {
     try {
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-      res.json(months.map(m => ({ name: m, total: 0 })));
+      const revenue = await sql`
+        SELECT 
+          TO_CHAR(verified_at, 'Mon') as name,
+          SUM(amount) as total
+        FROM payment_requests
+        WHERE status = 'verified' 
+          AND verified_at >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY TO_CHAR(verified_at, 'Mon'), DATE_TRUNC('month', verified_at)
+        ORDER BY DATE_TRUNC('month', verified_at) ASC
+      `;
+      
+      if (revenue.length === 0) {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+        return res.json(months.map(m => ({ name: m, total: 0 })));
+      }
+      
+      res.json(revenue);
     } catch (error) {
+      console.error("Failed to fetch revenue:", error);
       res.status(500).json({ error: "Failed to fetch revenue" });
     }
   });
@@ -464,6 +568,54 @@ async function startServer() {
       res.json(topics.map(t => ({ topic: t.topic, failRate: Math.round(t.fail_rate || 0) })));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch weak topics" });
+    }
+  });
+
+  // Admin: Get Alerts
+  app.get("/api/admin/alerts", async (req, res) => {
+    try {
+      const alerts = [];
+      
+      const [pendingPayments] = await sql`SELECT COUNT(*) as count FROM payment_requests WHERE status = 'pending'`;
+      if (parseInt(pendingPayments.count) > 0) {
+        alerts.push({
+          type: "warning",
+          title: "Pending Payments",
+          message: `${pendingPayments.count} manual payment request(s) waiting for verification.`
+        });
+      }
+
+      const [expiringPremiums] = await sql`
+        SELECT COUNT(*) as count FROM users 
+        WHERE is_premium = true 
+          AND premium_until IS NOT NULL 
+          AND premium_until <= CURRENT_TIMESTAMP + INTERVAL '3 days'
+          AND premium_until >= CURRENT_TIMESTAMP
+      `;
+      if (parseInt(expiringPremiums.count) > 0) {
+        alerts.push({
+          type: "info",
+          title: "Expiring Subscriptions",
+          message: `${expiringPremiums.count} premium subscription(s) expiring in the next 3 days.`
+        });
+      }
+
+      const [rejectedPayments] = await sql`
+        SELECT COUNT(*) as count FROM payment_requests 
+        WHERE status = 'rejected' AND DATE(created_at) = CURRENT_DATE
+      `;
+      if (parseInt(rejectedPayments.count) > 0) {
+        alerts.push({
+          type: "error",
+          title: "Rejected Payments",
+          message: `${rejectedPayments.count} payment request(s) were rejected today.`
+        });
+      }
+
+      res.json(alerts);
+    } catch (error) {
+      console.error("Failed to fetch alerts:", error);
+      res.status(500).json({ error: "Failed to fetch alerts" });
     }
   });
 
@@ -491,27 +643,6 @@ async function startServer() {
     }
   });
 
-  // Flashcards: Get Decks
-  app.get("/api/flashcards/decks", async (req, res) => {
-    try {
-      const decks = await sql`SELECT * FROM flashcard_decks ORDER BY created_at DESC`;
-      res.json(decks);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch decks" });
-    }
-  });
-
-  // Flashcards: Get Cards for Deck
-  app.get("/api/flashcards/deck/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const cards = await sql`SELECT * FROM flashcards WHERE deck_id = ${id}`;
-      res.json(cards);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch cards" });
-    }
-  });
-
   // User: Update profile
   app.post("/api/user/update", async (req, res) => {
     const { id, name, email } = req.body;
@@ -534,6 +665,194 @@ async function startServer() {
     }
   });
 
+  // PayMongo: Create Payment Link
+  app.post("/api/paymongo/create-link", async (req, res) => {
+    try {
+      const { amount, description, userId } = req.body;
+      const secretKey = process.env.PAYMONGO_SECRET_KEY;
+
+      if (!secretKey) {
+        return res.status(500).json({ error: "PayMongo secret key not configured" });
+      }
+
+      const response = await fetch("https://api.paymongo.com/v1/links", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${Buffer.from(secretKey).toString("base64")}`
+        },
+        body: JSON.stringify({
+          data: {
+            attributes: {
+              amount: amount * 100, // Convert to cents
+              description: description,
+              remarks: userId // Store userId in remarks for webhook identification
+            }
+          }
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("PayMongo Error:", data);
+        return res.status(response.status).json(data);
+      }
+
+      res.json(data.data.attributes);
+    } catch (error) {
+      console.error("PayMongo Link Creation Error:", error);
+      res.status(500).json({ error: "Failed to create payment link" });
+    }
+  });
+
+  // PayMongo: Webhook
+  app.post("/api/paymongo/webhook", async (req, res) => {
+    try {
+      const payload = req.body;
+      const eventType = payload.data.attributes.type;
+
+      if (eventType === "link.payment.paid") {
+        const paymentData = payload.data.attributes.data;
+        const userId = paymentData.attributes.remarks;
+        const description = paymentData.attributes.description || "";
+        
+        let durationDays = 30;
+        if (description.toLowerCase().includes("quarterly")) durationDays = 90;
+        if (description.toLowerCase().includes("lifetime")) durationDays = 36500; // 100 years
+
+        if (userId) {
+          console.log(`💰 PayMongo: Payment successful for user: ${userId} (${description})`);
+          await sql`
+            UPDATE users 
+            SET is_premium = true,
+                premium_until = CURRENT_TIMESTAMP + ${durationDays + ' days'}::interval
+            WHERE id = ${userId}
+          `;
+        }
+      }
+
+      res.json({ received: true });
+    } catch (error) {
+      console.error("PayMongo Webhook Error:", error);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  });
+
+  // Manual Payments: Submit Request
+  app.post("/api/payments/submit", async (req, res) => {
+    try {
+      const { userId, planId, amount, referenceNumber } = req.body;
+      
+      if (!userId || !planId || !amount || !referenceNumber) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const [request] = await sql`
+        INSERT INTO payment_requests (user_id, plan_id, amount, reference_number)
+        VALUES (${userId}, ${planId}, ${amount}, ${referenceNumber})
+        RETURNING *
+      `;
+
+      res.json(request);
+    } catch (error) {
+      console.error("Payment Submission Error:", error);
+      res.status(500).json({ error: "Failed to submit payment request" });
+    }
+  });
+
+  // Admin: List Payment Requests
+  app.get("/api/admin/payments", async (req, res) => {
+    try {
+      const status = req.query.status as string;
+      const requests = await sql`
+        SELECT pr.*, u.name as user_name, u.email as user_email
+        FROM payment_requests pr
+        JOIN users u ON pr.user_id = u.id
+        WHERE pr.status = ${status || 'pending'}
+        ORDER BY pr.created_at DESC
+      `;
+      res.json(requests);
+    } catch (error) {
+      console.error("Admin Payments Fetch Error:", error);
+      res.status(500).json({ error: "Failed to fetch payment requests" });
+    }
+  });
+
+  // Admin: Verify Payment
+  app.post("/api/admin/payments/verify", async (req, res) => {
+    try {
+      const { requestId, status, adminId } = req.body;
+      
+      if (!requestId || !status) {
+        return res.status(400).json({ error: "Missing requestId or status" });
+      }
+
+      const [request] = await sql`
+        SELECT * FROM payment_requests WHERE id = ${requestId}
+      `;
+
+      if (!request) {
+        return res.status(404).json({ error: "Payment request not found" });
+      }
+
+      if (status === "verified") {
+        let durationDays = 30;
+        if (request.plan_id === "quarterly") durationDays = 90;
+        if (request.plan_id === "lifetime") durationDays = 36500;
+
+        await sql.begin(async (tx: any) => {
+          await tx`
+            UPDATE payment_requests 
+            SET status = 'verified', verified_at = CURRENT_TIMESTAMP
+            WHERE id = ${requestId}
+          `;
+          
+          await tx`
+            UPDATE users 
+            SET is_premium = true,
+                premium_until = CURRENT_TIMESTAMP + ${durationDays} * interval '1 day'
+            WHERE id = ${request.user_id}
+          `;
+        });
+      } else {
+        await sql`
+          UPDATE payment_requests SET status = ${status} WHERE id = ${requestId}
+        `;
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Admin Payment Verification Error:", error);
+      res.status(500).json({ error: "Failed to verify payment" });
+    }
+  });
+
+  // Get Receipt/Certificate
+  app.get("/api/payments/receipt/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const [user] = await sql`SELECT * FROM users WHERE id = ${userId}`;
+      
+      if (!user || !user.is_premium) {
+        return res.status(404).json({ error: "No active premium subscription found" });
+      }
+
+      // In a real app, we'd fetch the latest successful payment
+      // For now, we'll return a mock receipt data
+      res.json({
+        receiptNumber: `OR-${Math.floor(100000 + Math.random() * 900000)}`,
+        date: user.premium_until, // Use expiry or some other date
+        userName: user.name,
+        userEmail: user.email,
+        status: "PAID",
+        expiry: user.premium_until
+      });
+    } catch (error) {
+      console.error("Receipt Fetch Error:", error);
+      res.status(500).json({ error: "Failed to fetch receipt" });
+    }
+  });
+
   // Catch-all for unhandled API routes
   app.use('/api/*', (req, res) => {
     console.log(`❌ Unhandled API route: ${req.method} ${req.originalUrl}`);
@@ -542,18 +861,25 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    console.log("🚀 SERVER: Running in DEVELOPMENT mode");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
+    console.log("🚀 SERVER: Running in PRODUCTION mode");
     app.use(express.static("dist"));
+    // SPA fallback for production
+    app.get("*", (req, res) => {
+      const indexPath = path.resolve("dist", "index.html");
+      console.log(`🚀 SERVER: Serving SPA fallback from ${indexPath}`);
+      res.sendFile(indexPath);
+    });
   }
-
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("🚀 SERVER: FATAL ERROR DURING STARTUP:", err);
+  process.exit(1);
+});
